@@ -19,7 +19,6 @@ const (
 	paramSeed           = "seed"
 )
 
-
 // WithNegativePrompt 设置反向提示词，用于描述不希望在图像中出现的内容。
 func WithNegativePrompt(negativePrompt string) images.Option {
 	return images.WithExtra(extraKeyNegativePrompt, negativePrompt)
