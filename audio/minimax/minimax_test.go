@@ -63,7 +63,7 @@ func TestGenerate_WithLanguage(t *testing.T) {
 	resp, err := gen.Generate(t.Context(), &schema.Request{
 		Text:     "Today is a beautiful day for a walk.",
 		Voice:    "English_radiant_girl",
-		Language: string(LanguageBoostEnglish),
+		Language: schema.LanguageEnglish,
 	})
 	if err != nil {
 		t.Fatalf("generate failed: %v", err)

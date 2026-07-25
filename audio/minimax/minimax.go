@@ -90,6 +90,17 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...a
 	return parseResponse(respBody)
 }
 
+func minimaxLanguage(l schema.Language) LanguageBoost {
+	switch l {
+	case schema.LanguageChinese:
+		return LanguageBoostChinese
+	case schema.LanguageEnglish:
+		return LanguageBoostEnglish
+	default:
+		return ""
+	}
+}
+
 func (g *Generator) buildPayload(model string, req *schema.Request, callOpts *audios.CallOptions) apiRequest {
 	payload := apiRequest{
 		Model:        model,
@@ -98,8 +109,8 @@ func (g *Generator) buildPayload(model string, req *schema.Request, callOpts *au
 		VoiceSetting: voiceSetting{VoiceID: req.Voice},
 	}
 
-	if strings.TrimSpace(req.Language) != "" {
-		payload.LanguageBoost = LanguageBoost(req.Language)
+	if lb := minimaxLanguage(req.Language); lb != "" {
+		payload.LanguageBoost = lb
 	}
 
 	if callOpts.Extra != nil {

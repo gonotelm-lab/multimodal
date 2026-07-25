@@ -91,13 +91,24 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...a
 	return parseResponse(respBody)
 }
 
+func dashScopeLanguage(l schema.Language) string {
+	switch l {
+	case schema.LanguageChinese:
+		return "Chinese"
+	case schema.LanguageEnglish:
+		return "English"
+	default:
+		return ""
+	}
+}
+
 func (g *Generator) buildPayload(model string, req *schema.Request, callOpts *audios.CallOptions) apiRequest {
 	inputFields := make(map[string]any)
 	inputFields["text"] = req.Text
 	inputFields["voice"] = req.Voice
 
-	if strings.TrimSpace(req.Language) != "" {
-		inputFields["language_type"] = req.Language
+	if lt := dashScopeLanguage(req.Language); lt != "" {
+		inputFields["language_type"] = lt
 	}
 	if strings.TrimSpace(req.Instruction) != "" {
 		inputFields[paramInstruction] = req.Instruction
