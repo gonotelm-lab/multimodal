@@ -11,6 +11,8 @@ const (
 	KindInvalidArgument Kind = iota + 1
 	KindUnauthorized
 	KindRateLimited
+	KindCanceled
+	KindDeadlineExceeded
 	KindInternal
 	KindNetwork
 )
@@ -18,17 +20,21 @@ const (
 func (k Kind) String() string {
 	switch k {
 	case KindInvalidArgument:
-		return "invalid_argument"
+		return "InvalidArgument"
 	case KindUnauthorized:
-		return "unauthorized"
+		return "Unauthorized"
 	case KindRateLimited:
-		return "rate_limited"
+		return "RateLimited"
+	case KindCanceled:
+		return "Canceled"
+	case KindDeadlineExceeded:
+		return "DeadlineExceeded"
 	case KindInternal:
-		return "internal"
+		return "Internal"
 	case KindNetwork:
-		return "network"
+		return "Network"
 	default:
-		return fmt.Sprintf("unknown(%d)", k)
+		return fmt.Sprintf("Unknown(%d)", k)
 	}
 }
 
@@ -56,9 +62,11 @@ func (e *Error) Is(target error) bool {
 }
 
 var (
-	ErrInvalidArgument = &Error{Kind: KindInvalidArgument}
-	ErrUnauthorized    = &Error{Kind: KindUnauthorized}
-	ErrRateLimited     = &Error{Kind: KindRateLimited}
-	ErrInternal        = &Error{Kind: KindInternal}
-	ErrNetwork         = &Error{Kind: KindNetwork}
+	ErrInvalidArgument   = &Error{Kind: KindInvalidArgument}
+	ErrUnauthorized      = &Error{Kind: KindUnauthorized}
+	ErrRateLimited       = &Error{Kind: KindRateLimited}
+	ErrCanceled          = &Error{Kind: KindCanceled}
+	ErrDeadlineExceeded  = &Error{Kind: KindDeadlineExceeded}
+	ErrInternal          = &Error{Kind: KindInternal}
+	ErrNetwork           = &Error{Kind: KindNetwork}
 )

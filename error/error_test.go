@@ -1,10 +1,12 @@
 package errx
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 )
 
 func TestNew(t *testing.T) {
@@ -15,7 +17,7 @@ func TestNew(t *testing.T) {
 	if e.Message != "prompt is required" {
 		t.Errorf("expected message 'prompt is required', got %q", e.Message)
 	}
-	expected := "invalid_argument: prompt is required"
+	expected := "InvalidArgument: prompt is required"
 	if e.Error() != expected {
 		t.Errorf("expected %q, got %q", expected, e.Error())
 	}
@@ -91,11 +93,17 @@ func TestIsRetryable(t *testing.T) {
 	if !IsRetryable(New(KindRateLimited, "")) {
 		t.Error("rate limited should be retryable")
 	}
+	if !IsRetryable(New(KindDeadlineExceeded, "")) {
+		t.Error("deadline exceeded should be retryable")
+	}
 	if !IsRetryable(New(KindNetwork, "")) {
 		t.Error("network should be retryable")
 	}
 	if !IsRetryable(New(KindInternal, "")) {
 		t.Error("internal should be retryable")
+	}
+	if IsRetryable(New(KindCanceled, "")) {
+		t.Error("cancelled should not be retryable")
 	}
 	if IsRetryable(New(KindUnauthorized, "")) {
 		t.Error("unauthorized should not be retryable")
@@ -214,14 +222,54 @@ func TestError_Unwrap(t *testing.T) {
 	}
 }
 
+func TestWrap_Canceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cause := ctx.Err()
+	e := Wrap(cause, KindNetwork, "call failed")
+	if e.Kind != KindCanceled {
+		t.Errorf("expected KindCanceled, got %v", e.Kind)
+	}
+	if e.Message != "call failed" {
+		t.Errorf("expected 'call failed', got %q", e.Message)
+	}
+	if e.Cause != cause {
+		t.Error("cause should be preserved")
+	}
+}
+
+func TestWrap_DeadlineExceeded(t *testing.T) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	cause := ctx.Err()
+	e := Wrap(cause, KindNetwork, "call failed")
+	if e.Kind != KindDeadlineExceeded {
+		t.Errorf("expected KindDeadlineExceeded, got %v", e.Kind)
+	}
+	if e.Message != "call failed" {
+		t.Errorf("expected 'call failed', got %q", e.Message)
+	}
+}
+
+func TestIsKind_NewKinds(t *testing.T) {
+	if !IsKind(New(KindCanceled, ""), KindCanceled) {
+		t.Error("IsKind should recognize KindCanceled")
+	}
+	if !IsKind(New(KindDeadlineExceeded, ""), KindDeadlineExceeded) {
+		t.Error("IsKind should recognize KindDeadlineExceeded")
+	}
+}
+
 func TestError_Error_formats(t *testing.T) {
 	tests := []struct {
 		e        *Error
 		expected string
 	}{
-		{&Error{Kind: KindInvalidArgument}, "invalid_argument"},
-		{New(KindUnauthorized, "bad api key"), "unauthorized: bad api key"},
-		{New(KindNetwork, ""), "network"},
+		{&Error{Kind: KindInvalidArgument}, "InvalidArgument"},
+		{New(KindUnauthorized, "bad api key"), "Unauthorized: bad api key"},
+		{New(KindNetwork, ""), "Network"},
+		{New(KindCanceled, ""), "Canceled"},
+		{New(KindDeadlineExceeded, ""), "DeadlineExceeded"},
 	}
 	for _, tt := range tests {
 		if tt.e.Error() != tt.expected {
