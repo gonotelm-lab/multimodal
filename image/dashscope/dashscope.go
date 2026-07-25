@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/gonotelm-lab/multimodal/error"
 
 	images "github.com/gonotelm-lab/multimodal/image"
 	"github.com/gonotelm-lab/multimodal/image/schema"
@@ -27,7 +28,7 @@ type Generator struct {
 
 func New(cfg Config, opts ...images.ClientOption) (*Generator, error) {
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, fmt.Errorf("dashscope api key is required")
+		return nil, errx.New(errx.KindInvalidArgument, "dashscope api key is required")
 	}
 	if strings.TrimSpace(cfg.BaseUrl) == "" {
 		cfg.BaseUrl = defaultBaseUrl
@@ -45,7 +46,7 @@ func New(cfg Config, opts ...images.ClientOption) (*Generator, error) {
 
 func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...images.Option) (*schema.Response, error) {
 	if strings.TrimSpace(req.Prompt) == "" {
-		return nil, fmt.Errorf("prompt is required")
+		return nil, errx.New(errx.KindInvalidArgument, "prompt is required")
 	}
 
 	callOpts := images.BuildCallOptions(opts...)
@@ -77,12 +78,12 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...i
 
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal dashscope text2image request failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInvalidArgument, "marshal dashscope text2image request failed")
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, g.cfg.BaseUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("build dashscope text2image request failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInvalidArgument, "build dashscope text2image request failed")
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+g.cfg.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -90,17 +91,17 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...i
 
 	httpResp, err := g.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("call dashscope text2image failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindNetwork, "call dashscope text2image failed")
 	}
 	defer httpResp.Body.Close()
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read dashscope text2image response failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindNetwork, "read dashscope text2image response failed")
 	}
 
 	if httpResp.StatusCode < http.StatusOK || httpResp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("dashscope text2image request failed: status=%d body=%s", httpResp.StatusCode, string(respBody))
+		return nil, dashScopeHTTPErrorToErr(httpResp.StatusCode, respBody, "text2image")
 	}
 
 	return parseResponse(respBody)
@@ -191,22 +192,24 @@ type apiUsage struct {
 func parseResponse(respBody []byte) (*schema.Response, error) {
 	var apiResp apiResponse
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("decode dashscope text2image response failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInternal, "decode dashscope text2image response failed")
 	}
 
-	// 检查错误响应
 	if apiResp.Code != "" {
-		return nil, fmt.Errorf("dashscope text2image error: code=%s message=%s", apiResp.Code, apiResp.Message)
+		e := errx.Newf(errx.DashScopeCodeToKind(apiResp.Code),
+			"dashscope text2image error: code=%s message=%s", apiResp.Code, apiResp.Message)
+		e.Raw = &apiResp
+		return nil, e
 	}
 
 	if len(apiResp.Output.Choices) == 0 {
-		return nil, fmt.Errorf("dashscope text2image response has no choices")
+		return nil, errx.New(errx.KindInternal, "dashscope text2image response has no choices")
 	}
 
 	// 提取图片 URL
 	choice := apiResp.Output.Choices[0]
 	if len(choice.Message.Content) == 0 {
-		return nil, fmt.Errorf("dashscope text2image response has no content")
+		return nil, errx.New(errx.KindInternal, "dashscope text2image response has no content")
 	}
 
 	// 构建 extras
@@ -232,4 +235,19 @@ func parseResponse(respBody []byte) (*schema.Response, error) {
 		ImageURL:       imageURL,
 		Extras:         extras,
 	}, nil
+}
+
+func dashScopeHTTPErrorToErr(status int, body []byte, api string) *errx.Error {
+	var codeResp struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if uerr := json.Unmarshal(body, &codeResp); uerr == nil && codeResp.Code != "" {
+		e := errx.Newf(errx.DashScopeCodeToKind(codeResp.Code),
+			"dashscope %s error: code=%s message=%s", api, codeResp.Code, codeResp.Message)
+		e.Raw = &codeResp
+		return e
+	}
+	return errx.Newf(errx.FromHTTPStatus(status),
+		"dashscope %s request failed: status=%d", api, status)
 }

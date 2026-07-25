@@ -2,10 +2,10 @@ package util
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 
+	"github.com/gonotelm-lab/multimodal/error"
 	"github.com/gonotelm-lab/multimodal/audio/schema"
 )
 
@@ -34,13 +34,13 @@ func WithResolveHttpClient(client *http.Client) ResolveOption {
 
 func ResolveResponse(r *schema.Response, opts ...ResolveOption) (io.ReadCloser, error) {
 	if r == nil {
-		return nil, fmt.Errorf("empty audio response")
+		return nil, errx.New(errx.KindInvalidArgument, "empty audio response")
 	}
 
 	switch r.ResponseFormat {
 	case schema.ResponseFormatBytes:
 		if r.Reader == nil {
-			return nil, fmt.Errorf("audio response has no reader")
+			return nil, errx.New(errx.KindInvalidArgument, "audio response has no reader")
 		}
 		return r.Reader, nil
 	case schema.ResponseFormatURL:
@@ -54,21 +54,23 @@ func ResolveResponse(r *schema.Response, opts ...ResolveOption) (io.ReadCloser, 
 
 		req, err := http.NewRequestWithContext(opt.ctx, http.MethodGet, r.URL, nil)
 		if err != nil {
-			return nil, fmt.Errorf("build audio download request failed: %w", err)
+			return nil, errx.Wrap(err, errx.KindInvalidArgument, "build audio download request failed")
 		}
 		httpResp, err := opt.httpClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("download audio failed: %w", err)
+			return nil, errx.Wrap(err, errx.KindNetwork, "download audio failed")
 		}
 
 		if httpResp.StatusCode != http.StatusOK {
 			io.Copy(io.Discard, httpResp.Body)
 			httpResp.Body.Close()
-			return nil, fmt.Errorf("download audio failed: status=%d", httpResp.StatusCode)
+			return nil, errx.Newf(errx.FromHTTPStatus(httpResp.StatusCode),
+				"download audio failed: status=%d", httpResp.StatusCode)
 		}
 
 		return httpResp.Body, nil
 	}
 
-	return nil, fmt.Errorf("audio response format not supported: %s", r.ResponseFormat)
+	return nil, errx.Newf(errx.KindInvalidArgument,
+		"audio response format not supported: %s", r.ResponseFormat)
 }

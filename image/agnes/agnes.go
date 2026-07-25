@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/gonotelm-lab/multimodal/error"
 
 	images "github.com/gonotelm-lab/multimodal/image"
 	"github.com/gonotelm-lab/multimodal/image/schema"
@@ -25,7 +26,7 @@ type Generator struct {
 
 func New(cfg Config, opts ...images.ClientOption) (*Generator, error) {
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, fmt.Errorf("agnes api key is required")
+		return nil, errx.New(errx.KindInvalidArgument, "agnes api key is required")
 	}
 	if strings.TrimSpace(cfg.BaseUrl) == "" {
 		cfg.BaseUrl = defaultBaseUrl
@@ -48,7 +49,7 @@ func New(cfg Config, opts ...images.ClientOption) (*Generator, error) {
 
 func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...images.Option) (*schema.Response, error) {
 	if strings.TrimSpace(req.Prompt) == "" {
-		return nil, fmt.Errorf("prompt is required")
+		return nil, errx.New(errx.KindInvalidArgument, "prompt is required")
 	}
 
 	// 模型优先级：Request > Config
@@ -75,12 +76,12 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...i
 
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal agnes text2image request failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInvalidArgument, "marshal agnes text2image request failed")
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, g.cfg.BaseUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("build agnes text2image request failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInvalidArgument, "build agnes text2image request failed")
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+g.cfg.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -88,17 +89,17 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...i
 
 	httpResp, err := g.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("call agnes text2image failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindNetwork, "call agnes text2image failed")
 	}
 	defer httpResp.Body.Close()
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read agnes text2image response failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindNetwork, "read agnes text2image response failed")
 	}
 
 	if httpResp.StatusCode < http.StatusOK || httpResp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("agnes text2image request failed: status=%d body=%s", httpResp.StatusCode, string(respBody))
+		return nil, openAIHTTPErrorToErr(httpResp.StatusCode, respBody, "agnes", "text2image")
 	}
 
 	return parseResponse(respBody)
@@ -141,16 +142,19 @@ type apiError struct {
 func parseResponse(respBody []byte) (*schema.Response, error) {
 	var apiResp apiResponse
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("decode agnes text2image response failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInternal, "decode agnes text2image response failed")
 	}
 
-	// 检查错误响应
 	if apiResp.Error != nil {
-		return nil, fmt.Errorf("agnes text2image error: type=%s code=%s message=%s", apiResp.Error.Type, apiResp.Error.Code, apiResp.Error.Message)
+		e := errx.Newf(errx.OpenAIErrorTypeToKind(apiResp.Error.Type),
+			"agnes text2image error: type=%s code=%s message=%s",
+			apiResp.Error.Type, apiResp.Error.Code, apiResp.Error.Message)
+		e.Raw = apiResp.Error
+		return nil, e
 	}
 
 	if len(apiResp.Data) == 0 {
-		return nil, fmt.Errorf("agnes text2image response has no data")
+		return nil, errx.New(errx.KindInternal, "agnes text2image response has no data")
 	}
 
 	item := apiResp.Data[0]
@@ -170,12 +174,30 @@ func parseResponse(respBody []byte) (*schema.Response, error) {
 	}
 
 	if item.URL == "" {
-		return nil, fmt.Errorf("agnes text2image response has no url or b64_json")
+		return nil, errx.New(errx.KindInternal, "agnes text2image response has no url or b64_json")
 	}
-
 	return &schema.Response{
 		ResponseFormat: schema.ResponseFormatURL,
 		ImageURL:       item.URL,
 		Extras:         extras,
 	}, nil
+}
+
+func openAIHTTPErrorToErr(status int, body []byte, provider, api string) *errx.Error {
+	var errResp struct {
+		Error struct {
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if uerr := json.Unmarshal(body, &errResp); uerr == nil && errResp.Error.Type != "" {
+		e := errx.Newf(errx.OpenAIErrorTypeToKind(errResp.Error.Type),
+			"%s %s error: type=%s code=%s message=%s",
+			provider, api, errResp.Error.Type, errResp.Error.Code, errResp.Error.Message)
+		e.Raw = &errResp.Error
+		return e
+	}
+	return errx.Newf(errx.FromHTTPStatus(status),
+		"%s %s request failed: status=%d", provider, api, status)
 }

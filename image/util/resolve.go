@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"net/http"
 
+	"github.com/gonotelm-lab/multimodal/error"
 	"github.com/gonotelm-lab/multimodal/image/schema"
 )
 
@@ -34,19 +34,16 @@ func WithResolveHttpClient(client *http.Client) ResolveResponseOption {
 	}
 }
 
-// 解析/下载返回图片
-//
-// 由于可能存在网络下载 因此使用方必须显式关闭放回的Reader
 func ResolveResponse(r *schema.Response, opts ...ResolveResponseOption) (io.ReadCloser, error) {
 	if r == nil {
-		return nil, fmt.Errorf("empty images response")
+		return nil, errx.New(errx.KindInvalidArgument, "empty images response")
 	}
 
 	switch r.ResponseFormat {
 	case schema.ResponseFormatBase64:
 		data, err := base64.StdEncoding.DecodeString(r.ImageBase64)
 		if err != nil {
-			return nil, fmt.Errorf("decode image base64 failed: %w", err)
+			return nil, errx.Wrap(err, errx.KindInvalidArgument, "decode image base64 failed")
 		}
 		return io.NopCloser(bytes.NewReader(data)), nil
 	case schema.ResponseFormatURL:
@@ -58,24 +55,25 @@ func ResolveResponse(r *schema.Response, opts ...ResolveResponseOption) (io.Read
 			o(opt)
 		}
 
-		// download image
 		req, err := http.NewRequestWithContext(opt.ctx, http.MethodGet, r.ImageURL, nil)
 		if err != nil {
-			return nil, fmt.Errorf("build image download request failed: %w", err)
+			return nil, errx.Wrap(err, errx.KindInvalidArgument, "build image download request failed")
 		}
 		httpResp, err := opt.httpClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("download image failed: %w", err)
+			return nil, errx.Wrap(err, errx.KindNetwork, "download image failed")
 		}
 
 		if httpResp.StatusCode != http.StatusOK {
 			io.Copy(io.Discard, httpResp.Body)
 			httpResp.Body.Close()
-			return nil, fmt.Errorf("download image failed: status=%d", httpResp.StatusCode)
+			return nil, errx.Newf(errx.FromHTTPStatus(httpResp.StatusCode),
+				"download image failed: status=%d", httpResp.StatusCode)
 		}
 
 		return httpResp.Body, nil
 	}
 
-	return nil, fmt.Errorf("images response format not supported: %s", r.ResponseFormat)
+	return nil, errx.Newf(errx.KindInvalidArgument,
+		"images response format not supported: %s", r.ResponseFormat)
 }

@@ -5,10 +5,11 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/gonotelm-lab/multimodal/error"
 
 	audios "github.com/gonotelm-lab/multimodal/audio"
 	"github.com/gonotelm-lab/multimodal/audio/schema"
@@ -26,7 +27,7 @@ type Generator struct {
 
 func New(cfg Config, opts ...audios.ClientOption) (*Generator, error) {
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, fmt.Errorf("minimax api key is required")
+		return nil, errx.New(errx.KindInvalidArgument, "minimax api key is required")
 	}
 	if strings.TrimSpace(cfg.BaseUrl) == "" {
 		cfg.BaseUrl = defaultBaseUrl
@@ -44,10 +45,10 @@ func New(cfg Config, opts ...audios.ClientOption) (*Generator, error) {
 
 func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...audios.Option) (*schema.Response, error) {
 	if strings.TrimSpace(req.Text) == "" {
-		return nil, fmt.Errorf("text is required")
+		return nil, errx.New(errx.KindInvalidArgument, "text is required")
 	}
 	if strings.TrimSpace(req.Voice) == "" {
-		return nil, fmt.Errorf("voice is required")
+		return nil, errx.New(errx.KindInvalidArgument, "voice is required")
 	}
 
 	callOpts := audios.BuildCallOptions(opts...)
@@ -61,29 +62,29 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...a
 
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal minimax tts request failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInvalidArgument, "marshal minimax tts request failed")
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, g.cfg.BaseUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("build minimax tts request failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInvalidArgument, "build minimax tts request failed")
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+g.cfg.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	httpResp, err := g.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("call minimax tts failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindNetwork, "call minimax tts failed")
 	}
 	defer httpResp.Body.Close()
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read minimax tts response failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindNetwork, "read minimax tts response failed")
 	}
 
 	if httpResp.StatusCode < http.StatusOK || httpResp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("minimax tts request failed: status=%d body=%s", httpResp.StatusCode, string(respBody))
+		return nil, miniMaxHTTPErrorToErr(httpResp.StatusCode, respBody)
 	}
 
 	return parseResponse(respBody)
@@ -233,15 +234,19 @@ type baseResp struct {
 func parseResponse(respBody []byte) (*schema.Response, error) {
 	var apiResp apiResponse
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("decode minimax tts response failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInternal, "decode minimax tts response failed")
 	}
 
 	if apiResp.BaseResp.StatusCode != 0 {
-		return nil, fmt.Errorf("minimax tts error: status_code=%d status_msg=%s", apiResp.BaseResp.StatusCode, apiResp.BaseResp.StatusMsg)
+		e := errx.Newf(errx.MiniMaxCodeToKind(apiResp.BaseResp.StatusCode),
+			"minimax tts error: status_code=%d status_msg=%s",
+			apiResp.BaseResp.StatusCode, apiResp.BaseResp.StatusMsg)
+		e.Raw = &apiResp.BaseResp
+		return nil, e
 	}
 
 	if apiResp.Data == nil || apiResp.Data.Audio == "" {
-		return nil, fmt.Errorf("minimax tts response has no audio data")
+		return nil, errx.New(errx.KindInternal, "minimax tts response has no audio data")
 	}
 
 	extras := make(map[string]any)
@@ -295,7 +300,7 @@ func parseResponse(respBody []byte) (*schema.Response, error) {
 
 	decoded, err := hex.DecodeString(apiResp.Data.Audio)
 	if err != nil {
-		return nil, fmt.Errorf("decode minimax audio hex failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInternal, "decode minimax audio hex failed")
 	}
 	return &schema.Response{
 		ResponseFormat: schema.ResponseFormatBytes,
@@ -303,4 +308,22 @@ func parseResponse(respBody []byte) (*schema.Response, error) {
 		AudioFormat:    audioFormat,
 		Extras:         extras,
 	}, nil
+}
+
+func miniMaxHTTPErrorToErr(status int, body []byte) *errx.Error {
+	var errResp struct {
+		BaseResp struct {
+			StatusCode int64  `json:"status_code"`
+			StatusMsg  string `json:"status_msg"`
+		} `json:"base_resp"`
+	}
+	if uerr := json.Unmarshal(body, &errResp); uerr == nil && errResp.BaseResp.StatusCode != 0 {
+		e := errx.Newf(errx.MiniMaxCodeToKind(errResp.BaseResp.StatusCode),
+			"minimax tts error: status_code=%d status_msg=%s",
+			errResp.BaseResp.StatusCode, errResp.BaseResp.StatusMsg)
+		e.Raw = &errResp.BaseResp
+		return e
+	}
+	return errx.Newf(errx.FromHTTPStatus(status),
+		"minimax tts request failed: status=%d", status)
 }

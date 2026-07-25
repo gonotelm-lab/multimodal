@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/gonotelm-lab/multimodal/error"
 
 	audios "github.com/gonotelm-lab/multimodal/audio"
 	"github.com/gonotelm-lab/multimodal/audio/schema"
@@ -25,7 +26,7 @@ type Generator struct {
 
 func New(cfg Config, opts ...audios.ClientOption) (*Generator, error) {
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, fmt.Errorf("dashscope api key is required")
+		return nil, errx.New(errx.KindInvalidArgument, "dashscope api key is required")
 	}
 	if strings.TrimSpace(cfg.BaseUrl) == "" {
 		cfg.BaseUrl = defaultBaseUrl
@@ -43,10 +44,10 @@ func New(cfg Config, opts ...audios.ClientOption) (*Generator, error) {
 
 func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...audios.Option) (*schema.Response, error) {
 	if strings.TrimSpace(req.Text) == "" {
-		return nil, fmt.Errorf("text is required")
+		return nil, errx.New(errx.KindInvalidArgument, "text is required")
 	}
 	if strings.TrimSpace(req.Voice) == "" {
-		return nil, fmt.Errorf("voice is required")
+		return nil, errx.New(errx.KindInvalidArgument, "voice is required")
 	}
 
 	callOpts := audios.BuildCallOptions(opts...)
@@ -60,30 +61,31 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...a
 
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal dashscope tts request failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInvalidArgument, "marshal dashscope tts request failed")
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, g.cfg.BaseUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("build dashscope tts request failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInvalidArgument, "build dashscope tts request failed")
 	}
+
 	httpReq.Header.Set("Authorization", "Bearer "+g.cfg.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
 
 	httpResp, err := g.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("call dashscope tts failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindNetwork, "call dashscope tts failed")
 	}
 	defer httpResp.Body.Close()
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read dashscope tts response failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindNetwork, "read dashscope tts response failed")
 	}
 
 	if httpResp.StatusCode < http.StatusOK || httpResp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("dashscope tts request failed: status=%d body=%s", httpResp.StatusCode, string(respBody))
+		return nil, dashScopeHTTPErrorToErr(httpResp.StatusCode, respBody, "tts")
 	}
 
 	return parseResponse(respBody)
@@ -157,15 +159,18 @@ type usageTokenDetail struct {
 func parseResponse(respBody []byte) (*schema.Response, error) {
 	var apiResp apiResponse
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("decode dashscope tts response failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInternal, "decode dashscope tts response failed")
 	}
 
 	if apiResp.Code != "" {
-		return nil, fmt.Errorf("dashscope tts error: code=%s message=%s", apiResp.Code, apiResp.Message)
+		e := errx.Newf(errx.DashScopeCodeToKind(apiResp.Code),
+			"dashscope tts error: code=%s message=%s", apiResp.Code, apiResp.Message)
+		e.Raw = &apiResp
+		return nil, e
 	}
 
 	if apiResp.Output.Audio.URL == "" {
-		return nil, fmt.Errorf("dashscope tts response has no audio url")
+		return nil, errx.New(errx.KindInternal, "dashscope tts response has no audio url")
 	}
 
 	extras := make(map[string]any)
@@ -194,4 +199,19 @@ func parseResponse(respBody []byte) (*schema.Response, error) {
 		AudioFormat:    "wav",
 		Extras:         extras,
 	}, nil
+}
+
+func dashScopeHTTPErrorToErr(status int, body []byte, api string) *errx.Error {
+	var codeResp struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if uerr := json.Unmarshal(body, &codeResp); uerr == nil && codeResp.Code != "" {
+		e := errx.Newf(errx.DashScopeCodeToKind(codeResp.Code),
+			"dashscope %s error: code=%s message=%s", api, codeResp.Code, codeResp.Message)
+		e.Raw = &codeResp
+		return e
+	}
+	return errx.Newf(errx.FromHTTPStatus(status),
+		"dashscope %s request failed: status=%d", api, status)
 }

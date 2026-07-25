@@ -5,10 +5,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/gonotelm-lab/multimodal/error"
 
 	audios "github.com/gonotelm-lab/multimodal/audio"
 	"github.com/gonotelm-lab/multimodal/audio/schema"
@@ -28,7 +29,7 @@ type Generator struct {
 
 func New(cfg Config, opts ...audios.ClientOption) (*Generator, error) {
 	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, fmt.Errorf("mimo api key is required")
+		return nil, errx.New(errx.KindInvalidArgument, "mimo api key is required")
 	}
 	if strings.TrimSpace(cfg.BaseUrl) == "" {
 		cfg.BaseUrl = defaultBaseUrl
@@ -46,7 +47,7 @@ func New(cfg Config, opts ...audios.ClientOption) (*Generator, error) {
 
 func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...audios.Option) (*schema.Response, error) {
 	if strings.TrimSpace(req.Text) == "" {
-		return nil, fmt.Errorf("text is required")
+		return nil, errx.New(errx.KindInvalidArgument, "text is required")
 	}
 
 	callOpts := audios.BuildCallOptions(opts...)
@@ -67,12 +68,12 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...a
 
 	bodyBytes, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal mimo tts request failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInvalidArgument, "marshal mimo tts request failed")
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, g.cfg.BaseUrl, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, fmt.Errorf("build mimo tts request failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInvalidArgument, "build mimo tts request failed")
 	}
 	httpReq.Header.Set("api-key", g.cfg.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -80,17 +81,17 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...a
 
 	httpResp, err := g.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("call mimo tts failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindNetwork, "call mimo tts failed")
 	}
 	defer httpResp.Body.Close()
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read mimo tts response failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindNetwork, "read mimo tts response failed")
 	}
 
 	if httpResp.StatusCode < http.StatusOK || httpResp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("mimo tts request failed: status=%d body=%s", httpResp.StatusCode, string(respBody))
+		return nil, openAIHTTPErrorToErr(httpResp.StatusCode, respBody, "mimo", "tts")
 	}
 
 	return parseResponse(respBody, string(format))
@@ -180,25 +181,29 @@ type apiUsage struct {
 func parseResponse(respBody []byte, format string) (*schema.Response, error) {
 	var apiResp apiResponse
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		return nil, fmt.Errorf("decode mimo tts response failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInternal, "decode mimo tts response failed")
 	}
 
 	if apiResp.Error != nil {
-		return nil, fmt.Errorf("mimo tts error: type=%s code=%s message=%s", apiResp.Error.Type, apiResp.Error.Code, apiResp.Error.Message)
+		e := errx.Newf(errx.OpenAIErrorTypeToKind(apiResp.Error.Type),
+			"mimo tts error: type=%s code=%s message=%s",
+			apiResp.Error.Type, apiResp.Error.Code, apiResp.Error.Message)
+		e.Raw = apiResp.Error
+		return nil, e
 	}
 
 	if len(apiResp.Choices) == 0 {
-		return nil, fmt.Errorf("mimo tts response has no choices")
+		return nil, errx.New(errx.KindInternal, "mimo tts response has no choices")
 	}
 
 	choice := apiResp.Choices[0]
 	if choice.Message.Audio == nil || strings.TrimSpace(choice.Message.Audio.Data) == "" {
-		return nil, fmt.Errorf("mimo tts response has no audio data")
+		return nil, errx.New(errx.KindInternal, "mimo tts response has no audio data")
 	}
 
 	audioBytes, err := base64.StdEncoding.DecodeString(choice.Message.Audio.Data)
 	if err != nil {
-		return nil, fmt.Errorf("decode mimo tts audio base64 failed: %w", err)
+		return nil, errx.Wrap(err, errx.KindInternal, "decode mimo tts audio base64 failed")
 	}
 
 	extras := make(map[string]any)
@@ -235,4 +240,23 @@ func parseResponse(respBody []byte, format string) (*schema.Response, error) {
 		AudioFormat:    format,
 		Extras:         extras,
 	}, nil
+}
+
+func openAIHTTPErrorToErr(status int, body []byte, provider, api string) *errx.Error {
+	var errResp struct {
+		Error struct {
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if uerr := json.Unmarshal(body, &errResp); uerr == nil && errResp.Error.Type != "" {
+		e := errx.Newf(errx.OpenAIErrorTypeToKind(errResp.Error.Type),
+			"%s %s error: type=%s code=%s message=%s",
+			provider, api, errResp.Error.Type, errResp.Error.Code, errResp.Error.Message)
+		e.Raw = &errResp.Error
+		return e
+	}
+	return errx.Newf(errx.FromHTTPStatus(status),
+		"%s %s request failed: status=%d", provider, api, status)
 }
