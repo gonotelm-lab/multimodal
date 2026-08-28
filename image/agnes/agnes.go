@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gonotelm-lab/multimodal/callbacks"
 	"github.com/gonotelm-lab/multimodal/error"
 
 	images "github.com/gonotelm-lab/multimodal/image"
@@ -15,6 +16,7 @@ import (
 )
 
 const (
+	runType        = "agnes"
 	defaultBaseUrl = "https://apihub.agnes-ai.com/v1/images/generations"
 	defaultModel   = "agnes-image-2.1-flash"
 )
@@ -47,7 +49,20 @@ func New(cfg Config, opts ...images.ClientOption) (*Generator, error) {
 	}, nil
 }
 
-func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...images.Option) (*schema.Response, error) {
+func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...images.Option) (resp *schema.Response, err error) {
+	callOpts := images.BuildCallOptions(opts...)
+
+	ctx = callbacks.EnsureRunInfo(ctx, runType, callbacks.ComponentImage)
+	ctx = callbacks.OnStart(ctx, &images.CallbackInput{
+		Request:     req,
+		CallOptions: callOpts,
+	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
+
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, errx.New(errx.KindInvalidArgument, "prompt is required")
 	}
@@ -102,7 +117,13 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...i
 		return nil, openAIHTTPErrorToErr(httpResp.StatusCode, respBody, "agnes", "text2image")
 	}
 
-	return parseResponse(respBody)
+	resp, err = parseResponse(respBody)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx = callbacks.OnEnd(ctx, &images.CallbackOutput{Response: resp})
+	return resp, nil
 }
 
 // --- request payload ---

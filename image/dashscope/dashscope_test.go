@@ -1,11 +1,17 @@
 package dashscope
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"testing"
 
+	"github.com/gonotelm-lab/multimodal/callbacks"
+	images "github.com/gonotelm-lab/multimodal/image"
 	"github.com/gonotelm-lab/multimodal/image/schema"
 )
 
@@ -132,4 +138,134 @@ func TestNew_MissingAPIKey(t *testing.T) {
 	}
 
 	fmt.Printf("Expected error: %v\n", err)
+}
+
+type roundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestGenerate_Callbacks(t *testing.T) {
+	gen, err := New(Config{APIKey: "test-key"}, images.WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(bytes.NewBufferString(`{
+				"output": {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": [{"text": "", "image": "https://example.com/img.png"}]}}]},
+				"request_id": "req-123"
+			}`)),
+			Header: make(http.Header),
+		}, nil
+	})}))
+
+	var starts, ends, errs []string
+	h := callbacks.NewHandlerBuilder().
+		OnStartFn(func(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
+			starts = append(starts, info.Type)
+			ci := images.ConvCallbackInput(input)
+			if ci == nil || ci.Request == nil || ci.CallOptions == nil {
+				t.Errorf("expected image.CallbackInput with Request and CallOptions")
+			}
+			return ctx
+		}).
+		OnEndFn(func(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
+			ends = append(ends, info.Type)
+			co := images.ConvCallbackOutput(output)
+			if co == nil || co.Response == nil {
+				t.Errorf("expected image.CallbackOutput with Response")
+			}
+			return ctx
+		}).
+		OnErrorFn(func(ctx context.Context, info *callbacks.RunInfo, err error) context.Context {
+			errs = append(errs, info.Type)
+			return ctx
+		}).
+		Build()
+
+	ctx := callbacks.WithCallbacks(t.Context(), h)
+	resp, err := gen.Generate(ctx, &schema.Request{Prompt: "test prompt"})
+	if err != nil {
+		t.Fatalf("generate failed: %v", err)
+	}
+	if resp.ImageURL == "" {
+		t.Fatal("expected non-empty image url")
+	}
+	if len(starts) != 1 || starts[0] != "dashscope" {
+		t.Fatalf("expected 1 start with type dashscope, got %v", starts)
+	}
+	if len(ends) != 1 || ends[0] != "dashscope" {
+		t.Fatalf("expected 1 end with type dashscope, got %v", ends)
+	}
+	if len(errs) != 0 {
+		t.Fatalf("expected no error callback, got %v", errs)
+	}
+}
+
+func TestGenerate_CallbacksOnError(t *testing.T) {
+	gen, err := New(Config{APIKey: "test-key"}, images.WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Body: io.NopCloser(bytes.NewBufferString(`{"code":"InvalidParameter","message":"bad"}`)),
+			Header: make(http.Header),
+		}, nil
+	})}))
+
+	var starts, ends, errs []string
+	h := callbacks.NewHandlerBuilder().
+		OnStartFn(func(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
+			starts = append(starts, info.Type)
+			return ctx
+		}).
+		OnEndFn(func(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
+			ends = append(ends, info.Type)
+			return ctx
+		}).
+		OnErrorFn(func(ctx context.Context, info *callbacks.RunInfo, err error) context.Context {
+			errs = append(errs, info.Type)
+			return ctx
+		}).
+		Build()
+
+	ctx := callbacks.WithCallbacks(t.Context(), h)
+	_, err = gen.Generate(ctx, &schema.Request{Prompt: "test prompt"})
+	if err == nil {
+		t.Fatal("expected error from http 400")
+	}
+	if len(starts) != 1 {
+		t.Fatalf("expected 1 start, got %v", starts)
+	}
+	if len(ends) != 0 {
+		t.Fatalf("expected no end callback on error, got %v", ends)
+	}
+	if len(errs) != 1 || errs[0] != "dashscope" {
+		t.Fatalf("expected 1 error callback with type dashscope, got %v", errs)
+	}
+}
+
+func TestGenerate_CallbacksOnValidationError(t *testing.T) {
+	gen, err := New(Config{APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("new failed: %v", err)
+	}
+
+	var starts, errs []string
+	h := callbacks.NewHandlerBuilder().
+		OnStartFn(func(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
+			starts = append(starts, info.Type)
+			return ctx
+		}).
+		OnErrorFn(func(ctx context.Context, info *callbacks.RunInfo, err error) context.Context {
+			errs = append(errs, info.Type)
+			return ctx
+		}).
+		Build()
+
+	ctx := callbacks.WithCallbacks(t.Context(), h)
+	_, err = gen.Generate(ctx, &schema.Request{Prompt: ""})
+	if err == nil {
+		t.Fatal("expected error with empty prompt")
+	}
+	if len(starts) != 1 || len(errs) != 1 {
+		t.Fatalf("expected 1 start and 1 error, got starts=%v errs=%v", starts, errs)
+	}
 }

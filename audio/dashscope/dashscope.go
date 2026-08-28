@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gonotelm-lab/multimodal/callbacks"
 	"github.com/gonotelm-lab/multimodal/error"
 
 	audios "github.com/gonotelm-lab/multimodal/audio"
@@ -15,6 +16,7 @@ import (
 )
 
 const (
+	runType        = "dashscope"
 	defaultBaseUrl = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 	defaultModel   = "qwen3-tts-flash"
 )
@@ -42,15 +44,26 @@ func New(cfg Config, opts ...audios.ClientOption) (*Generator, error) {
 	}, nil
 }
 
-func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...audios.Option) (*schema.Response, error) {
+func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...audios.Option) (resp *schema.Response, err error) {
+	callOpts := audios.BuildCallOptions(opts...)
+
+	ctx = callbacks.EnsureRunInfo(ctx, runType, callbacks.ComponentAudio)
+	ctx = callbacks.OnStart(ctx, &audios.CallbackInput{
+		Request:     req,
+		CallOptions: callOpts,
+	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
+
 	if strings.TrimSpace(req.Text) == "" {
 		return nil, errx.New(errx.KindInvalidArgument, "text is required")
 	}
 	if strings.TrimSpace(req.Voice) == "" {
 		return nil, errx.New(errx.KindInvalidArgument, "voice is required")
 	}
-
-	callOpts := audios.BuildCallOptions(opts...)
 
 	model := g.cfg.Model
 	if req.Model != "" {
@@ -88,7 +101,13 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...a
 		return nil, dashScopeHTTPErrorToErr(httpResp.StatusCode, respBody, "tts")
 	}
 
-	return parseResponse(respBody)
+	resp, err = parseResponse(respBody)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx = callbacks.OnEnd(ctx, &audios.CallbackOutput{Response: resp})
+	return resp, nil
 }
 
 func dashScopeLanguage(l schema.Language) string {
