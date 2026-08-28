@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gonotelm-lab/multimodal/callbacks"
 	"github.com/gonotelm-lab/multimodal/error"
 
 	images "github.com/gonotelm-lab/multimodal/image"
@@ -17,6 +18,7 @@ import (
 // https://help.aliyun.com/zh/model-studio/qwen-image-api
 
 const (
+	runType        = "dashscope"
 	defaultBaseUrl = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 	defaultModel   = "qwen-image-2.0-pro"
 )
@@ -44,12 +46,23 @@ func New(cfg Config, opts ...images.ClientOption) (*Generator, error) {
 	}, nil
 }
 
-func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...images.Option) (*schema.Response, error) {
+func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...images.Option) (resp *schema.Response, err error) {
+	callOpts := images.BuildCallOptions(opts...)
+
+	ctx = callbacks.EnsureRunInfo(ctx, runType, callbacks.ComponentImage)
+	ctx = callbacks.OnStart(ctx, &images.CallbackInput{
+		Request:     req,
+		CallOptions: callOpts,
+	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
+
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, errx.New(errx.KindInvalidArgument, "prompt is required")
 	}
-
-	callOpts := images.BuildCallOptions(opts...)
 
 	// 构建 parameters
 	parameters := buildParameters(req, callOpts)
@@ -104,7 +117,13 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...i
 		return nil, dashScopeHTTPErrorToErr(httpResp.StatusCode, respBody, "text2image")
 	}
 
-	return parseResponse(respBody)
+	resp, err = parseResponse(respBody)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx = callbacks.OnEnd(ctx, &images.CallbackOutput{Response: resp})
+	return resp, nil
 }
 
 func buildParameters(req *schema.Request, callOpts *images.CallOptions) map[string]any {
