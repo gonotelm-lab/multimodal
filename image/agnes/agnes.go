@@ -185,7 +185,7 @@ func parseResponse(respBody []byte) (*schema.Response, error) {
 
 	extras := make(map[string]any)
 	if item.RevisedPrompt != "" {
-		extras["revised_prompt"] = item.RevisedPrompt
+		extras[ExtraRevisedPrompt] = item.RevisedPrompt
 	}
 
 	// 优先返回 Base64 (如果存在)，否则返回 URL

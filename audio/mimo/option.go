@@ -5,8 +5,8 @@ import (
 )
 
 const (
-	extraKeyFormat              = "mimo_format"
-	extraKeyOptimizeTextPreview = "mimo_optimize_text_preview"
+	optKeyFormat              = "mimo_format"
+	optKeyOptimizeTextPreview = "mimo_optimize_text_preview"
 
 	paramFormat              = "format"
 	paramVoice               = "voice"
@@ -55,11 +55,11 @@ const (
 
 // WithFormat 设置合成音频的格式，不传时默认为 FormatWAV。
 func WithFormat(format Format) audios.Option {
-	return audios.WithExtra(extraKeyFormat, format)
+	return audios.WithExtra(optKeyFormat, format)
 }
 
 // WithOptimizeTextPreview 用于 ModelVoiceDesign 模型，
 // 设为 true 时由模型对目标播报文本进行智能润色，可省略 assistant 消息。
 func WithOptimizeTextPreview(enable bool) audios.Option {
-	return audios.WithExtra(extraKeyOptimizeTextPreview, enable)
+	return audios.WithExtra(optKeyOptimizeTextPreview, enable)
 }

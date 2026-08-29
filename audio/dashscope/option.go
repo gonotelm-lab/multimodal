@@ -5,8 +5,8 @@ import (
 )
 
 const (
-	extraKeyFormat     = "dashscope_format"
-	extraKeySampleRate = "dashscope_sample_rate"
+	optKeyFormat     = "dashscope_format"
+	optKeySampleRate = "dashscope_sample_rate"
 
 	paramInstruction = "instruction"
 	paramFormat      = "format"
@@ -14,9 +14,9 @@ const (
 )
 
 func WithFormat(format string) audios.Option {
-	return audios.WithExtra(extraKeyFormat, format)
+	return audios.WithExtra(optKeyFormat, format)
 }
 
 func WithSampleRate(sampleRate int) audios.Option {
-	return audios.WithExtra(extraKeySampleRate, sampleRate)
+	return audios.WithExtra(optKeySampleRate, sampleRate)
 }

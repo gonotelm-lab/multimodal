@@ -138,10 +138,10 @@ func (g *Generator) buildPayload(model string, req *schema.Request, callOpts *au
 	}
 
 	if callOpts.Extra != nil {
-		if v, ok := callOpts.Extra[extraKeyFormat].(string); ok && v != "" {
+		if v, ok := callOpts.Extra[optKeyFormat].(string); ok && v != "" {
 			inputFields[paramFormat] = v
 		}
-		if v, ok := callOpts.Extra[extraKeySampleRate].(int); ok && v > 0 {
+		if v, ok := callOpts.Extra[optKeySampleRate].(int); ok && v > 0 {
 			inputFields[paramSampleRate] = v
 		}
 	}
@@ -209,28 +209,61 @@ func parseResponse(respBody []byte) (*schema.Response, error) {
 
 	extras := make(map[string]any)
 	if apiResp.RequestID != "" {
-		extras["request_id"] = apiResp.RequestID
+		extras[ExtraRequestID] = apiResp.RequestID
 	}
 	if apiResp.Output.Audio.ExpiresAt > 0 {
-		extras["expires_at"] = apiResp.Output.Audio.ExpiresAt
+		extras[ExtraExpiresAt] = apiResp.Output.Audio.ExpiresAt
 	}
 	if apiResp.Usage.InputTokens > 0 {
-		extras["input_tokens"] = apiResp.Usage.InputTokens
+		extras[ExtraInputTokens] = apiResp.Usage.InputTokens
 	}
 	if apiResp.Usage.OutputTokens > 0 {
-		extras["output_tokens"] = apiResp.Usage.OutputTokens
+		extras[ExtraOutputTokens] = apiResp.Usage.OutputTokens
 	}
 	if apiResp.Usage.TotalTokens > 0 {
-		extras["total_tokens"] = apiResp.Usage.TotalTokens
+		extras[ExtraTotalTokens] = apiResp.Usage.TotalTokens
 	}
 	if apiResp.Usage.Characters > 0 {
-		extras["characters"] = apiResp.Usage.Characters
+		extras[ExtraCharacters] = apiResp.Usage.Characters
+	}
+	if apiResp.Usage.InputTokensDetails != nil {
+		if apiResp.Usage.InputTokensDetails.TextTokens > 0 {
+			extras[ExtraInputTextTokens] = apiResp.Usage.InputTokensDetails.TextTokens
+		}
+		if apiResp.Usage.InputTokensDetails.AudioTokens > 0 {
+			extras[ExtraInputAudioTokens] = apiResp.Usage.InputTokensDetails.AudioTokens
+		}
+	}
+	if apiResp.Usage.OutputTokensDetails != nil {
+		if apiResp.Usage.OutputTokensDetails.AudioTokens > 0 {
+			extras[ExtraOutputAudioTokens] = apiResp.Usage.OutputTokensDetails.AudioTokens
+		}
+		if apiResp.Usage.OutputTokensDetails.TextTokens > 0 {
+			extras[ExtraOutputTextTokens] = apiResp.Usage.OutputTokensDetails.TextTokens
+		}
+	}
+
+	var usage *schema.Usage
+	if apiResp.Usage.Characters > 0 {
+		chars := int64(apiResp.Usage.Characters)
+		usage = &schema.Usage{Characters: &chars}
+	}
+	if apiResp.Usage.InputTokens > 0 || apiResp.Usage.OutputTokens > 0 || apiResp.Usage.TotalTokens > 0 {
+		if usage == nil {
+			usage = &schema.Usage{}
+		}
+		usage.TokenUsage = &schema.TokenUsage{
+			InputTokens:  int64(apiResp.Usage.InputTokens),
+			OutputTokens: int64(apiResp.Usage.OutputTokens),
+			TotalTokens:  int64(apiResp.Usage.TotalTokens),
+		}
 	}
 
 	return &schema.Response{
 		ResponseFormat: schema.ResponseFormatURL,
 		URL:            apiResp.Output.Audio.URL,
 		AudioFormat:    "wav",
+		Usage:          usage,
 		Extras:         extras,
 	}, nil
 }

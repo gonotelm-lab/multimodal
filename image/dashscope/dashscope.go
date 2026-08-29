@@ -144,19 +144,19 @@ func buildParameters(req *schema.Request, callOpts *images.CallOptions) map[stri
 
 	// 从 callOpts 中解析额外参数
 	if callOpts.Extra != nil {
-		if v, ok := callOpts.Extra[extraKeyNegativePrompt].(string); ok && v != "" {
+		if v, ok := callOpts.Extra[optKeyNegativePrompt].(string); ok && v != "" {
 			parameters[paramNegativePrompt] = v
 		}
-		if v, ok := callOpts.Extra[extraKeyPromptExtend].(bool); ok {
+		if v, ok := callOpts.Extra[optKeyPromptExtend].(bool); ok {
 			parameters[paramPromptExtend] = v
 		}
-		if v, ok := callOpts.Extra[extraKeyWatermark].(bool); ok {
+		if v, ok := callOpts.Extra[optKeyWatermark].(bool); ok {
 			parameters[paramWatermark] = v
 		}
-		if v, ok := callOpts.Extra[extraKeyN].(int); ok && v > 0 {
+		if v, ok := callOpts.Extra[optKeyN].(int); ok && v > 0 {
 			parameters[paramN] = v
 		}
-		if v, ok := callOpts.Extra[extraKeySeed].(int); ok {
+		if v, ok := callOpts.Extra[optKeySeed].(int); ok {
 			parameters[paramSeed] = v
 		}
 	}
@@ -237,16 +237,16 @@ func parseResponse(respBody []byte) (*schema.Response, error) {
 	// 构建 extras
 	extras := make(map[string]any)
 	if apiResp.RequestID != "" {
-		extras["request_id"] = apiResp.RequestID
+		extras[ExtraRequestID] = apiResp.RequestID
 	}
 	if apiResp.Usage.Height > 0 {
-		extras["height"] = apiResp.Usage.Height
+		extras[ExtraHeight] = apiResp.Usage.Height
 	}
 	if apiResp.Usage.Width > 0 {
-		extras["width"] = apiResp.Usage.Width
+		extras[ExtraWidth] = apiResp.Usage.Width
 	}
 	if apiResp.Usage.ImageCount > 0 {
-		extras["image_count"] = apiResp.Usage.ImageCount
+		extras[ExtraImageCount] = apiResp.Usage.ImageCount
 	}
 
 	// 默认返回 URL 格式的第一张图片
