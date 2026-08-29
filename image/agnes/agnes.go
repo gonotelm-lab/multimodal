@@ -52,6 +52,15 @@ func New(cfg Config, opts ...images.ClientOption) (*Generator, error) {
 func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...images.Option) (resp *schema.Response, err error) {
 	callOpts := images.BuildCallOptions(opts...)
 
+	// 模型优先级：Request > Config；回写 req 供 callback / recorder 使用
+	model := g.cfg.Model
+	if req != nil && req.Model != "" {
+		model = req.Model
+	}
+	if req != nil {
+		req.Model = model
+	}
+
 	ctx = callbacks.EnsureRunInfo(ctx, runType, callbacks.ComponentImage)
 	ctx = callbacks.OnStart(ctx, &images.CallbackInput{
 		Request:     req,
@@ -63,14 +72,8 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...i
 		}
 	}()
 
-	if strings.TrimSpace(req.Prompt) == "" {
+	if req == nil || strings.TrimSpace(req.Prompt) == "" {
 		return nil, errx.New(errx.KindInvalidArgument, "prompt is required")
-	}
-
-	// 模型优先级：Request > Config
-	model := g.cfg.Model
-	if req.Model != "" {
-		model = req.Model
 	}
 
 	payload := apiRequest{
