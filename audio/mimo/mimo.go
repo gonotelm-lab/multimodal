@@ -50,6 +50,15 @@ func New(cfg Config, opts ...audios.ClientOption) (*Generator, error) {
 func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...audios.Option) (resp *schema.Response, err error) {
 	callOpts := audios.BuildCallOptions(opts...)
 
+	// 模型优先级：Request > Config；回写 req 供 callback / recorder 使用
+	model := g.cfg.Model
+	if req != nil && req.Model != "" {
+		model = req.Model
+	}
+	if req != nil {
+		req.Model = model
+	}
+
 	ctx = callbacks.EnsureRunInfo(ctx, runType, callbacks.ComponentAudio)
 	ctx = callbacks.OnStart(ctx, &audios.CallbackInput{
 		Request:     req,
@@ -61,13 +70,8 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...a
 		}
 	}()
 
-	if strings.TrimSpace(req.Text) == "" {
+	if req == nil || strings.TrimSpace(req.Text) == "" {
 		return nil, errx.New(errx.KindInvalidArgument, "text is required")
-	}
-
-	model := g.cfg.Model
-	if req.Model != "" {
-		model = req.Model
 	}
 
 	format := defaultFormat
