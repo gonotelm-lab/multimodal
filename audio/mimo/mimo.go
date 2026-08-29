@@ -76,7 +76,7 @@ func (g *Generator) Generate(ctx context.Context, req *schema.Request, opts ...a
 
 	format := defaultFormat
 	if callOpts.Extra != nil {
-		if v, ok := callOpts.Extra[extraKeyFormat].(Format); ok && v != "" {
+		if v, ok := callOpts.Extra[optKeyFormat].(Format); ok && v != "" {
 			format = v
 		}
 	}
@@ -128,7 +128,7 @@ func (g *Generator) buildPayload(model, format string, req *schema.Request, call
 		audioField[paramVoice] = req.Voice
 	}
 	if callOpts.Extra != nil {
-		if v, ok := callOpts.Extra[extraKeyOptimizeTextPreview].(bool); ok && v {
+		if v, ok := callOpts.Extra[optKeyOptimizeTextPreview].(bool); ok && v {
 			audioField[paramOptimizeTextPreview] = true
 		}
 	}
@@ -199,6 +199,9 @@ type apiUsage struct {
 	PromptTokens     int `json:"prompt_tokens,omitempty"`
 	CompletionTokens int `json:"completion_tokens,omitempty"`
 	TotalTokens      int `json:"total_tokens,omitempty"`
+	PromptTokensDetails *struct {
+		CachedTokens int `json:"cached_tokens,omitempty"`
+	} `json:"prompt_tokens_details,omitempty"`
 }
 
 func parseResponse(respBody []byte, format string) (*schema.Response, error) {
@@ -231,29 +234,47 @@ func parseResponse(respBody []byte, format string) (*schema.Response, error) {
 
 	extras := make(map[string]any)
 	if apiResp.ID != "" {
-		extras["id"] = apiResp.ID
+		extras[ExtraID] = apiResp.ID
 	}
 	if choice.FinishReason != "" {
-		extras["finish_reason"] = choice.FinishReason
+		extras[ExtraFinishReason] = choice.FinishReason
 	}
 	if choice.Message.Audio.ID != "" {
-		extras["audio_id"] = choice.Message.Audio.ID
+		extras[ExtraAudioID] = choice.Message.Audio.ID
 	}
 	if choice.Message.Audio.ExpiresAt > 0 {
-		extras["expires_at"] = choice.Message.Audio.ExpiresAt
+		extras[ExtraExpiresAt] = choice.Message.Audio.ExpiresAt
 	}
 	if choice.Message.Audio.Transcript != "" {
-		extras["transcript"] = choice.Message.Audio.Transcript
+		extras[ExtraTranscript] = choice.Message.Audio.Transcript
 	}
+	var usage *schema.Usage
 	if apiResp.Usage != nil {
 		if apiResp.Usage.PromptTokens > 0 {
-			extras["prompt_tokens"] = apiResp.Usage.PromptTokens
+			extras[ExtraPromptTokens] = apiResp.Usage.PromptTokens
 		}
 		if apiResp.Usage.CompletionTokens > 0 {
-			extras["completion_tokens"] = apiResp.Usage.CompletionTokens
+			extras[ExtraCompletionTokens] = apiResp.Usage.CompletionTokens
 		}
 		if apiResp.Usage.TotalTokens > 0 {
-			extras["total_tokens"] = apiResp.Usage.TotalTokens
+			extras[ExtraTotalTokens] = apiResp.Usage.TotalTokens
+		}
+		cached := 0
+		if apiResp.Usage.PromptTokensDetails != nil {
+			cached = apiResp.Usage.PromptTokensDetails.CachedTokens
+			if cached > 0 {
+				extras[ExtraCachedTokens] = cached
+			}
+		}
+		if apiResp.Usage.PromptTokens > 0 || apiResp.Usage.CompletionTokens > 0 || apiResp.Usage.TotalTokens > 0 || cached > 0 {
+			usage = &schema.Usage{
+				TokenUsage: &schema.TokenUsage{
+					InputTokens:       int64(apiResp.Usage.PromptTokens),
+					CachedInputTokens: int64(cached),
+					OutputTokens:      int64(apiResp.Usage.CompletionTokens),
+					TotalTokens:       int64(apiResp.Usage.TotalTokens),
+				},
+			}
 		}
 	}
 
@@ -261,6 +282,7 @@ func parseResponse(respBody []byte, format string) (*schema.Response, error) {
 		ResponseFormat: schema.ResponseFormatBytes,
 		Reader:         io.NopCloser(bytes.NewReader(audioBytes)),
 		AudioFormat:    format,
+		Usage:          usage,
 		Extras:         extras,
 	}, nil
 }

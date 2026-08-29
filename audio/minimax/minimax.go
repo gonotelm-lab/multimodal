@@ -137,58 +137,58 @@ func (g *Generator) buildPayload(model string, req *schema.Request, callOpts *au
 	}
 
 	if callOpts.Extra != nil {
-		if v, ok := callOpts.Extra[extraKeySpeed].(float64); ok {
+		if v, ok := callOpts.Extra[optKeySpeed].(float64); ok {
 			payload.VoiceSetting.Speed = v
 		}
-		if v, ok := callOpts.Extra[extraKeyVolume].(float64); ok {
+		if v, ok := callOpts.Extra[optKeyVolume].(float64); ok {
 			payload.VoiceSetting.Vol = v
 		}
-		if v, ok := callOpts.Extra[extraKeyPitch].(int); ok {
+		if v, ok := callOpts.Extra[optKeyPitch].(int); ok {
 			payload.VoiceSetting.Pitch = v
 		}
-		if v, ok := callOpts.Extra[extraKeyEmotion].(Emotion); ok && v != "" {
+		if v, ok := callOpts.Extra[optKeyEmotion].(Emotion); ok && v != "" {
 			payload.VoiceSetting.Emotion = v
 		}
-		if v, ok := callOpts.Extra[extraKeyLanguageBoost].(LanguageBoost); ok && v != "" {
+		if v, ok := callOpts.Extra[optKeyLanguageBoost].(LanguageBoost); ok && v != "" {
 			payload.LanguageBoost = v
 		}
-		if v, ok := callOpts.Extra[extraKeyOutputFormat].(OutputFormat); ok && v != "" {
+		if v, ok := callOpts.Extra[optKeyOutputFormat].(OutputFormat); ok && v != "" {
 			payload.OutputFormat = v
 		}
-		if v, ok := callOpts.Extra[extraKeyPronunciationDict].([]string); ok && len(v) > 0 {
+		if v, ok := callOpts.Extra[optKeyPronunciationDict].([]string); ok && len(v) > 0 {
 			payload.PronunciationDict = &pronunciationDict{Tone: v}
 		}
-		if v, ok := callOpts.Extra[extraKeySubtitleEnable].(bool); ok {
+		if v, ok := callOpts.Extra[optKeySubtitleEnable].(bool); ok {
 			payload.SubtitleEnable = v
 		}
-		if v, ok := callOpts.Extra[extraKeySubtitleType].(SubtitleType); ok && v != "" {
+		if v, ok := callOpts.Extra[optKeySubtitleType].(SubtitleType); ok && v != "" {
 			payload.SubtitleType = v
 		}
-		if v, ok := callOpts.Extra[extraKeyTextNormalization].(bool); ok {
+		if v, ok := callOpts.Extra[optKeyTextNormalization].(bool); ok {
 			payload.VoiceSetting.TextNormalization = v
 		}
-		if v, ok := callOpts.Extra[extraKeyLatexRead].(bool); ok {
+		if v, ok := callOpts.Extra[optKeyLatexRead].(bool); ok {
 			payload.VoiceSetting.LatexRead = v
 		}
-		if v, ok := callOpts.Extra[extraKeyAigcWatermark].(bool); ok {
+		if v, ok := callOpts.Extra[optKeyAigcWatermark].(bool); ok {
 			payload.AigcWatermark = v
 		}
 
 		audioSet := audioSetting{}
 		hasAudio := false
-		if v, ok := callOpts.Extra[extraKeySampleRate].(SampleRate); ok && v > 0 {
+		if v, ok := callOpts.Extra[optKeySampleRate].(SampleRate); ok && v > 0 {
 			audioSet.SampleRate = v
 			hasAudio = true
 		}
-		if v, ok := callOpts.Extra[extraKeyBitrate].(Bitrate); ok && v > 0 {
+		if v, ok := callOpts.Extra[optKeyBitrate].(Bitrate); ok && v > 0 {
 			audioSet.Bitrate = v
 			hasAudio = true
 		}
-		if v, ok := callOpts.Extra[extraKeyChannel].(Channel); ok && v > 0 {
+		if v, ok := callOpts.Extra[optKeyChannel].(Channel); ok && v > 0 {
 			audioSet.Channel = v
 			hasAudio = true
 		}
-		if v, ok := callOpts.Extra[extraKeyAudioFormat].(AudioFormat); ok && v != "" {
+		if v, ok := callOpts.Extra[optKeyAudioFormat].(AudioFormat); ok && v != "" {
 			audioSet.Format = v
 			hasAudio = true
 		}
@@ -285,41 +285,47 @@ func parseResponse(respBody []byte) (*schema.Response, error) {
 
 	extras := make(map[string]any)
 	if apiResp.TraceID != "" {
-		extras["trace_id"] = apiResp.TraceID
+		extras[ExtraTraceID] = apiResp.TraceID
 	}
 	if apiResp.ExtraInfo != nil {
 		if apiResp.ExtraInfo.AudioLength > 0 {
-			extras["audio_length"] = apiResp.ExtraInfo.AudioLength
+			extras[ExtraAudioLength] = apiResp.ExtraInfo.AudioLength
 		}
 		if apiResp.ExtraInfo.AudioSize > 0 {
-			extras["audio_size"] = apiResp.ExtraInfo.AudioSize
+			extras[ExtraAudioSize] = apiResp.ExtraInfo.AudioSize
 		}
 		if apiResp.ExtraInfo.UsageCharacters > 0 {
-			extras["usage_characters"] = apiResp.ExtraInfo.UsageCharacters
+			extras[ExtraUsageCharacters] = apiResp.ExtraInfo.UsageCharacters
 		}
 		if apiResp.ExtraInfo.AudioSampleRate > 0 {
-			extras["audio_sample_rate"] = apiResp.ExtraInfo.AudioSampleRate
+			extras[ExtraAudioSampleRate] = apiResp.ExtraInfo.AudioSampleRate
 		}
 		if apiResp.ExtraInfo.Bitrate > 0 {
-			extras["bitrate"] = apiResp.ExtraInfo.Bitrate
+			extras[ExtraBitrate] = apiResp.ExtraInfo.Bitrate
 		}
 		if apiResp.ExtraInfo.AudioChannel > 0 {
-			extras["audio_channel"] = apiResp.ExtraInfo.AudioChannel
+			extras[ExtraAudioChannel] = apiResp.ExtraInfo.AudioChannel
 		}
 		if apiResp.ExtraInfo.WordCount > 0 {
-			extras["word_count"] = apiResp.ExtraInfo.WordCount
+			extras[ExtraWordCount] = apiResp.ExtraInfo.WordCount
 		}
 		if apiResp.ExtraInfo.InvisibleCharacterRatio > 0 {
-			extras["invisible_character_ratio"] = apiResp.ExtraInfo.InvisibleCharacterRatio
+			extras[ExtraInvisibleCharacterRatio] = apiResp.ExtraInfo.InvisibleCharacterRatio
 		}
 	}
 	if apiResp.Data.SubtitleFile != "" {
-		extras["subtitle_file"] = apiResp.Data.SubtitleFile
+		extras[ExtraSubtitleFile] = apiResp.Data.SubtitleFile
 	}
 
 	audioFormat := ""
 	if apiResp.ExtraInfo != nil {
 		audioFormat = apiResp.ExtraInfo.AudioFormat
+	}
+
+	var usage *schema.Usage
+	if apiResp.ExtraInfo != nil && apiResp.ExtraInfo.UsageCharacters > 0 {
+		chars := apiResp.ExtraInfo.UsageCharacters
+		usage = &schema.Usage{Characters: &chars}
 	}
 
 	// output_format=hex → data.audio 是 hex 字符串；output_format=url → data.audio 是 URL
@@ -328,6 +334,7 @@ func parseResponse(respBody []byte) (*schema.Response, error) {
 			ResponseFormat: schema.ResponseFormatURL,
 			URL:            apiResp.Data.Audio,
 			AudioFormat:    audioFormat,
+			Usage:          usage,
 			Extras:         extras,
 		}, nil
 	}
@@ -340,6 +347,7 @@ func parseResponse(respBody []byte) (*schema.Response, error) {
 		ResponseFormat: schema.ResponseFormatBytes,
 		Reader:         io.NopCloser(bytes.NewReader(decoded)),
 		AudioFormat:    audioFormat,
+		Usage:          usage,
 		Extras:         extras,
 	}, nil
 }

@@ -61,10 +61,10 @@ func TestGenerate_WithSize(t *testing.T) {
 	}
 
 	// 检查 extras 中是否包含尺寸信息
-	if _, ok := resp.Extras["width"]; !ok {
+	if _, ok := resp.Extras[ExtraWidth]; !ok {
 		t.Log("warning: expected width in extras")
 	}
-	if _, ok := resp.Extras["height"]; !ok {
+	if _, ok := resp.Extras[ExtraHeight]; !ok {
 		t.Log("warning: expected height in extras")
 	}
 

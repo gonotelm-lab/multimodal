@@ -5,22 +5,22 @@ import (
 )
 
 const (
-	extraKeySpeed             = "minimax_speed"
-	extraKeyVolume            = "minimax_volume"
-	extraKeyPitch             = "minimax_pitch"
-	extraKeyEmotion           = "minimax_emotion"
-	extraKeyAudioFormat       = "minimax_audio_format"
-	extraKeySampleRate        = "minimax_sample_rate"
-	extraKeyBitrate           = "minimax_bitrate"
-	extraKeyChannel           = "minimax_channel"
-	extraKeyLanguageBoost     = "minimax_language_boost"
-	extraKeyOutputFormat      = "minimax_output_format"
-	extraKeyPronunciationDict = "minimax_pronunciation_dict"
-	extraKeySubtitleEnable    = "minimax_subtitle_enable"
-	extraKeySubtitleType      = "minimax_subtitle_type"
-	extraKeyTextNormalization = "minimax_text_normalization"
-	extraKeyLatexRead         = "minimax_latex_read"
-	extraKeyAigcWatermark     = "minimax_aigc_watermark"
+	optKeySpeed             = "minimax_speed"
+	optKeyVolume            = "minimax_volume"
+	optKeyPitch             = "minimax_pitch"
+	optKeyEmotion           = "minimax_emotion"
+	optKeyAudioFormat       = "minimax_audio_format"
+	optKeySampleRate        = "minimax_sample_rate"
+	optKeyBitrate           = "minimax_bitrate"
+	optKeyChannel           = "minimax_channel"
+	optKeyLanguageBoost     = "minimax_language_boost"
+	optKeyOutputFormat      = "minimax_output_format"
+	optKeyPronunciationDict = "minimax_pronunciation_dict"
+	optKeySubtitleEnable    = "minimax_subtitle_enable"
+	optKeySubtitleType      = "minimax_subtitle_type"
+	optKeyTextNormalization = "minimax_text_normalization"
+	optKeyLatexRead         = "minimax_latex_read"
+	optKeyAigcWatermark     = "minimax_aigc_watermark"
 )
 
 const (
@@ -149,65 +149,65 @@ const (
 )
 
 func WithSpeed(v float64) audios.Option {
-	return audios.WithExtra(extraKeySpeed, v)
+	return audios.WithExtra(optKeySpeed, v)
 }
 
 func WithVolume(v float64) audios.Option {
-	return audios.WithExtra(extraKeyVolume, v)
+	return audios.WithExtra(optKeyVolume, v)
 }
 
 func WithPitch(v int) audios.Option {
-	return audios.WithExtra(extraKeyPitch, v)
+	return audios.WithExtra(optKeyPitch, v)
 }
 
 func WithEmotion(v Emotion) audios.Option {
-	return audios.WithExtra(extraKeyEmotion, v)
+	return audios.WithExtra(optKeyEmotion, v)
 }
 
 func WithAudioFormat(v AudioFormat) audios.Option {
-	return audios.WithExtra(extraKeyAudioFormat, v)
+	return audios.WithExtra(optKeyAudioFormat, v)
 }
 
 func WithSampleRate(v SampleRate) audios.Option {
-	return audios.WithExtra(extraKeySampleRate, v)
+	return audios.WithExtra(optKeySampleRate, v)
 }
 
 func WithBitrate(v Bitrate) audios.Option {
-	return audios.WithExtra(extraKeyBitrate, v)
+	return audios.WithExtra(optKeyBitrate, v)
 }
 
 func WithChannel(v Channel) audios.Option {
-	return audios.WithExtra(extraKeyChannel, v)
+	return audios.WithExtra(optKeyChannel, v)
 }
 
 func WithLanguageBoost(v LanguageBoost) audios.Option {
-	return audios.WithExtra(extraKeyLanguageBoost, v)
+	return audios.WithExtra(optKeyLanguageBoost, v)
 }
 
 func WithOutputFormat(v OutputFormat) audios.Option {
-	return audios.WithExtra(extraKeyOutputFormat, v)
+	return audios.WithExtra(optKeyOutputFormat, v)
 }
 
 func WithPronunciationDict(tone []string) audios.Option {
-	return audios.WithExtra(extraKeyPronunciationDict, tone)
+	return audios.WithExtra(optKeyPronunciationDict, tone)
 }
 
 func WithSubtitleEnable(v bool) audios.Option {
-	return audios.WithExtra(extraKeySubtitleEnable, v)
+	return audios.WithExtra(optKeySubtitleEnable, v)
 }
 
 func WithSubtitleType(v SubtitleType) audios.Option {
-	return audios.WithExtra(extraKeySubtitleType, v)
+	return audios.WithExtra(optKeySubtitleType, v)
 }
 
 func WithTextNormalization(v bool) audios.Option {
-	return audios.WithExtra(extraKeyTextNormalization, v)
+	return audios.WithExtra(optKeyTextNormalization, v)
 }
 
 func WithLatexRead(v bool) audios.Option {
-	return audios.WithExtra(extraKeyLatexRead, v)
+	return audios.WithExtra(optKeyLatexRead, v)
 }
 
 func WithAigcWatermark(v bool) audios.Option {
-	return audios.WithExtra(extraKeyAigcWatermark, v)
+	return audios.WithExtra(optKeyAigcWatermark, v)
 }
